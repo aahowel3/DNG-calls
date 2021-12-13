@@ -1,0 +1,19 @@
+#list out the files you'll be working with
+L1s = $(shell find . -name '*_L1.R1')
+R1s = $(subst _L1.R1,_R1.fastq, $(L1s))
+
+#check you have the right list
+.PHONY : variables1
+variables1:
+        echo $(L1s)
+
+.PHONY : variables2
+variables2:
+        echo $(R1s)
+
+
+#this will output them in the same folder they came from...
+.PHONY: R1_files
+R1_files: $(R1s)
+%_R1.fastq : %_L1.R1 %_L2.R1
+        cat $^ > $@
