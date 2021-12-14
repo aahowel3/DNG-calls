@@ -1,0 +1,30 @@
+# path to main folders 
+#2017 includes descendant GE and MAs as well as the SB210 nonGEd ancestor
+2017_FASTQ := /storage/datasets/Tetrahymena_thermophila/2017-04-17/fastq
+ANCES_FASTQ := /storage/datasets/Tetrahymena_thermophila/ancestor_ges/fastq
+
+#remove paths 
+REMOVE_2017_bad := /storage/datasets/Tetrahymena_thermophila/2017-04-17/fastq/bad
+
+2017s = $(shell find $(2017_FASTQ) -type d -path $(REMOVE_2017_FASTQC) -prune -o -name '*L001_R1_001.fastq' -print)
+ANC_GES = $(shell find $(ANCES_FASTQ) -name '*L001_R1*' -print)
+SAMPLES = $(MA_ANCES) $(MA_DESC) $(GE_DESC)
+
+R1_FASTQS = $(notdir $(subst _L001_R1_001.fastq,_R1.fastq,$(SAMPLES))))
+
+#ALL_FASTQS = $(R1_FASTQS) $(R2_FASTQS) $(R1_GE) $(R2_GE)
+
+.PHONY : variables
+variables:
+       echo $(R1_FASTQS)
+
+################################################################################
+# combine lanes
+.PHONY: fastq_files
+fastq_files: $(ALL_FASTQS)
+
+%_R1.fastq:
+	@echo "Target $@"
+	$(eval $@_fastqs := $(shell find $(2017_FASTQ)/$*_L00{1,2,3,4}_R1_001.fastq))
+	@cat $($@_fastqs) > $@
+
