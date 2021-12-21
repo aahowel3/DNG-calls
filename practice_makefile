@@ -28,3 +28,17 @@ OUTDIR = ./lists
 listout: $(OUTDIR)/list.txt
 $(OUTDIR)/list.txt: A_R1.fastq subfolder/B_R1.fastq
         cat $^ > $@
+
+#What about when you want multiple things to go to the new directory?
+#this does not work - ignores OUTDIR and puts output in same folder as dependency 
+short_names = $(subst _R1.fastq,_R1.head.fastq, $(R1s))
+OUTDIR = ./lists
+.PHONY: listout
+listout: $(OUTDIR)/$(short_names)
+
+.PHONY: check
+check:
+        echo $(short_names)
+
+%_R1.head.fastq: %_R1.fastq
+        head -n1 $*_R1.fastq > $@
