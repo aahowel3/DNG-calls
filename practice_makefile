@@ -17,3 +17,7 @@ variables2:
 R1_files: $(R1s)
 %_R1.fastq : %_L1.R1 %_L2.R1
         cat $^ > $@
+
+#if you add a new rule does not appear to rerun the creation of the R1 fastq files because they have not changed 
+list.txt: A_R1.fastq subfolder/B_R1.fastq
+        cat $^ > $@
