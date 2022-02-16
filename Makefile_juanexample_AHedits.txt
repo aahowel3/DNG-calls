@@ -1,30 +1,128 @@
 # path to main folders 
 #2017 includes descendant GE and MAs as well as the SB210 nonGEd ancestor
+
+#need this for the location in the fastq_files rule
 2017_FASTQ := /storage/datasets/Tetrahymena_thermophila/2017-04-17/fastq
+
+#not this one
 ANCES_FASTQ := /storage/datasets/Tetrahymena_thermophila/ancestor_ges/fastq
-
+##Junkjukn
 #remove paths 
-REMOVE_2017_bad := /storage/datasets/Tetrahymena_thermophila/2017-04-17/fastq/bad
+#REMOVE_2017_bad := /storage/datasets/Tetrahymena_thermophila/2017-04-17/fastq/bad
+#2017s = $(shell find $(2017_FASTQ) -type d -path $(REMOVE_2017_FASTQC) -prune -o -name '*L001_R1_001.fastq' -print)
 
-2017s = $(shell find $(2017_FASTQ) -type d -path $(REMOVE_2017_FASTQC) -prune -o -name '*L001_R1_001.fastq' -print)
+2017s = $(shell find /storage/datasets/Tetrahymena_thermophila/2017-04-17/fastq -type d \( -path /storage/datasets/Tetrahymena_thermophila/2017-04-17/fastq/bad -o -path /storage/datasets/Tetrahymena_thermophila/2017-04-17/fastq/fastqc \) -prune -o -name '*L001_R1_001.fastq*' -print) 
 ANC_GES = $(shell find $(ANCES_FASTQ) -name '*L001_R1*' -print)
-SAMPLES = $(MA_ANCES) $(MA_DESC) $(GE_DESC)
+#SAMPLES = $(2017s) $(ANC_GES)
 
-R1_FASTQS = $(notdir $(subst _L001_R1_001.fastq,_R1.fastq,$(SAMPLES))))
+ANC_R1_FASTQS = $(notdir $(subst _L001_R1_001.fastq,_anc_R1.fastq,$(ANC_GES)))
+ANC_R2_FASTQS = $(notdir $(subst _L001_R1_001.fastq,_anc_R2.fastq,$(ANC_GES)))
 
-#ALL_FASTQS = $(R1_FASTQS) $(R2_FASTQS) $(R1_GE) $(R2_GE)
+R1_FASTQS = $(notdir $(subst _L001_R1_001.fastq,_R1.fastq,$(2017s)))
+R2_FASTQS = $(notdir $(subst _L001_R1_001.fastq,_R2.fastq,$(2017s)))
 
+ALL_FASTQS = $(R1_FASTQS) $(R2_FASTQS) $(ANC_R1_FASTQS) $(ANC_R2_FASTQS)
+
+#check its printing what you think its printing 
 .PHONY : variables
 variables:
-       echo $(R1_FASTQS)
-
+	echo $(SAMPLES)
+#	$(foreach V, $(SAMPLES), echo "${V}") 
 ################################################################################
 # combine lanes
 .PHONY: fastq_files
 fastq_files: $(ALL_FASTQS)
 
 %_R1.fastq:
-	@echo "Target $@"
 	$(eval $@_fastqs := $(shell find $(2017_FASTQ)/$*_L00{1,2,3,4}_R1_001.fastq))
-	@cat $($@_fastqs) > $@
+	cat $($@_fastqs) > $@
+
+%_R2.fastq:
+	$(eval $@_fastqs := $(shell find $(2017_FASTQ)/$*_L00{1,2,3,4}_R2_001.fastq))
+	cat $($@_fastqs) > $@
+
+%_anc_R1.fastq:
+	$(eval $@_fastqs := $(shell find $(ANCES_FASTQ)/**/$*_L00{1,2,3,4}_R1_001.fastq))
+	cat $($@_fastqs) > $@
+
+%_anc_R2.fastq:
+	$(eval $@_fastqs := $(shell find $(ANCES_FASTQ)/**/$*_L00{1,2,3,4}_R2_001.fastq))
+	cat $($@_fastqs) > $@
+
+################################################################################
+# alignment
+REF = /storage/reference_genomes/tetrahymena_thermophila/mac/mac.genome.fasta
+SAMS = $(subst _R1.fastq,.sam, $(ALL_FASTQS))
+
+.PHONY: sam_files
+
+sam_files: $(SAMS)
+
+%.sam: %_R1.fastq %_R2.fastq $(REF)
+	$(eval $@_FLOWCELL := $(shell head -n1 $*_R1.fastq | cut -d ":" -f3))
+	$(eval $@_MEMFLAGS := "-R @RG\tID:$($@_FLOWCELL)\tSM:$*\tLB:$*\tPU:$($@_FLOWCELL)\tPL:illumina")
+	bwa mem $($@_MEM_FLAGS) $(REF) $*_R1.fastq $*_R2.fastq > $@
+
+################################################################################
+# convert sam to bam, sort, and index bam
+BAMS = $(subst .sam,.bam,$(SAMS))
+SAMTOOLS = samtools
+
+.PHONY: bam_files
+
+bam_files: $(BAMS)
+
+%_init.bam: %.sam
+	$(SAMTOOLS) view -S -b $< > $@
+
+%_sorted.bam: %_init.bam
+	$(SAMTOOLS) sort -o $@ $<
+
+%_sorted_rmdup.bam: %_sorted.bam
+	$(SAMTOOLS) rmdup $< $@
+
+%_sorted_rmdup_mapped.bam: %_sorted_rmdup.bam
+	$(SAMTOOLS) view -b -h -F 4 $< $@
+
+%.bam: %_sorted_rmdup_mapped.bam
+	$(SAMTOOLS) index $<
+
+################################################################################
+# merge all MIC data and all MAC data together
+MIC.bam: $(BAMS)
+	$(SAMTOOLS) merge *GE*.bam *Anc*.bam > $@
+
+MAC.bam: $(BAMS)
+	$(SAMTOOLS) merge *MA*.bam *SB210E*.bam > $@
+
+################################################################################
+# haplotypecaller
+PICARD = picard
+GATK = gatk
+
+# create dictionary using picard
+%.dict: $(REF)
+	$(PICARD) CreateSequenceDictionary REFERENCE=$(REF) OUTPUT=$(REF).dict
+
+# initial call of variants using HaplotypeCaller and your alignment
+fist-calls.vcf: $(REF) MIC.bam MAC.bam 
+	$(GATK) HaplotypeCaller -R $(REF) -I MIC.bam -I MAC.bam -stand-call-conf 50 -ploidy 2 -O $@
+
+# recalibrate base quality scores in your alignment using the first round of variant calls
+#  produces a recalibration table
+recalibration.table: MIC.bam MAC.bam first-call.vcf
+	$(GATK) BaseRecalibrator -I MIC.bam -I MAC.bam -R $(REF) --known-sites first-calls.vcf -O $@
+
+# apply your recalibration table to your original alignment
+aln.recal.bam: MIC.bam MAC.bam $(REF) recalibration.table
+	$(GATK) ApplyBQSR -I MIC.bam -I MAC.bam -R $(REF) --bqsr-recal-file recalibration.table -O $@
+
+# rerun HaplotypeCaller using the recalibrated alignment
+second-calls.vcf: $(REF) aln.recal.bam
+	$(GAKT) HaplotypeCaller -O $@ -R $(REF) -I aln.recal.bam -L --verbosity=ERROR \
+	--standard-min-confidence-threshold-for-calling=0 \
+	--base-quality-score-threshold=13 --minimum-mapping-quality=3  --read-filter=PrimaryLineReadFilter
+
+
+
 
