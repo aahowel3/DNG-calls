@@ -26,7 +26,7 @@ ALL_FASTQS = $(R1_FASTQS) $(R2_FASTQS) $(ANC_R1_FASTQS) $(ANC_R2_FASTQS)
 #check its printing what you think its printing 
 .PHONY : variables
 variables:
-	echo $(SAMPLES)
+	echo $(R1_FASTQS)
 #	$(foreach V, $(SAMPLES), echo "${V}") 
 ################################################################################
 # combine lanes
@@ -54,19 +54,22 @@ fastq_files: $(ALL_FASTQS)
 REF = /storage/reference_genomes/tetrahymena_thermophila/mac/mac.genome.fasta
 SAMS = $(subst _R1.fastq,.sam, $(ALL_FASTQS))
 
+#SAMS = A12GE2_S14.sam
+
 .PHONY: sam_files
 
 sam_files: $(SAMS)
 
 %.sam: %_R1.fastq %_R2.fastq $(REF)
 	$(eval $@_FLOWCELL := $(shell head -n1 $*_R1.fastq | cut -d ":" -f3))
-	$(eval $@_MEMFLAGS := "-R @RG\tID:$($@_FLOWCELL)\tSM:$*\tLB:$*\tPU:$($@_FLOWCELL)\tPL:illumina")
-	bwa mem $($@_MEM_FLAGS) $(REF) $*_R1.fastq $*_R2.fastq > $@
+	bwa mem -R "@RG\tID:$($@_FLOWCELL)\tSM:$*\tLB:$*\tPU:$($@_FLOWCELL)\tPL:illumina" $(REF) $*_R1.fastq $*_R2.fastq > $@
 
 ################################################################################
 # convert sam to bam, sort, and index bam
-BAMS = $(subst .sam,.bam,$(SAMS))
+BAMS = $(subst .sam,_sorted_rmdup_mapped.bam,$(SAMS))
 SAMTOOLS = samtools
+
+#BAMS = A12GE2_S14_sorted_rmdup_mapped.bam
 
 .PHONY: bam_files
 
@@ -82,10 +85,13 @@ bam_files: $(BAMS)
 	$(SAMTOOLS) rmdup $< $@
 
 %_sorted_rmdup_mapped.bam: %_sorted_rmdup.bam
-	$(SAMTOOLS) view -b -h -F 4 $< $@
+	$(SAMTOOLS) view -b -h -F 4 $< > $@
 
-%.bam: %_sorted_rmdup_mapped.bam
-	$(SAMTOOLS) index $<
+.PHONY: index
+INDEX_LIST = $(addsuffix .bai, $(basename $(shell ls *.bam)))
+index: $(INDEX_LIST)
+%.bai: %.bam
+	samtools index $<
 
 ################################################################################
 # merge all MIC data and all MAC data together
