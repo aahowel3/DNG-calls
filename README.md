@@ -10,3 +10,11 @@ Descendant nonGEs  /storage/datasets/Tetrahymena_thermophila/2017-04-17/fastq la
 Descendant GEs  /storage/datasets/Tetrahymena_thermophila/2017-04-17/fastq labelled GEs
 
 #preparing data - concatenating lanes and aligning 
+
+# new reccomendations for processing 
+http://ftp.1000genomes.ebi.ac.uk/vol1/ftp/data_collections/1000G_2504_high_coverage/20190405_NYGC_b38_pipeline_description.pdf
+
+/storage/datasets/Tetrahymena_thermophila/2017-04-17/read_groups.tsv
+/storage/datasets/Tetrahymena_thermophila/2017-04-17/scripts/buildrg.R
+#this is the correct one that samples read groups from the first 10 rather than the very first as there may be errors in the first 6N tag
+/storage/datasets/Tetrahymena_thermophila/analyses/ancestor_ges_v2/scripts/buildrg.R
